@@ -9,7 +9,7 @@ license = "ISC"
 crate-type = ["cdylib"]
 
 [dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
+nih_plug = { git = "https://github.com/poucet/nih-plug", features = ["assert_process_allocs"] }
 nih_plug_webview = { path = ".." }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0"
