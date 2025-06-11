@@ -9,8 +9,7 @@ use std::{
     },
 };
 use wry::{
-    http::{Request, Response},
-    WebContext, WebView, WebViewBuilder,
+    dpi::{LogicalPosition, LogicalSize}, http::{Request, Response}, WebContext, WebView, WebViewBuilder
 };
 
 use crossbeam::channel::{unbounded, Receiver};
@@ -120,10 +119,15 @@ pub struct WindowHandler {
 impl WindowHandler {
     pub fn resize(&self, window: &mut baseview::Window, width: u32, height: u32) {
         self.webview.set_bounds(wry::Rect {
-            x: 0,
-            y: 0,
-            width,
-            height,
+            position: wry::dpi::Position::Logical(
+                LogicalPosition { x: 0.0, y: 0.0 },
+            ),
+            size: wry::dpi::Size::Logical(
+                LogicalSize {
+                    width: width as f64,
+                    height: height as f64,
+                },
+            ),
         });
         self.width.store(width, Ordering::Relaxed);
         self.height.store(height, Ordering::Relaxed);
@@ -211,18 +215,23 @@ impl Editor for WebViewEditor {
 
             let mut web_context = WebContext::new(Some(std::env::temp_dir()));
 
-            let mut webview_builder = WebViewBuilder::new_as_child(window)
+            let mut webview_builder = WebViewBuilder::with_web_context(&mut web_context)
                 .with_bounds(wry::Rect {
-                    x: 0,
-                    y: 0,
-                    width: width.load(Ordering::Relaxed) as u32,
-                    height: height.load(Ordering::Relaxed) as u32,
+                    position: wry::dpi::Position::Logical(
+                        LogicalPosition { x: 0.0, y: 0.0 },
+                    ),                       
+                    size: wry::dpi::Size::Logical(
+                        LogicalSize {   
+                            width: width.load(Ordering::Relaxed) as f64,
+                            height: height.load(Ordering::Relaxed) as f64,
+                        },
+                    ),
                 })
                 .with_accept_first_mouse(true)
                 .with_devtools(developer_mode)
-                .with_web_context(&mut web_context)
                 .with_initialization_script(include_str!("script.js"))
-                .with_ipc_handler(move |msg: String| {
+                .with_ipc_handler(move |msg: wry::http::Request<String>| {
+                    let msg = msg.into_body();
                     if let Ok(json_value) = serde_json::from_str(&msg) {
                         let _ = events_sender.send(json_value);
                     } else {
@@ -234,7 +243,7 @@ impl Editor for WebViewEditor {
             if let Some(custom_protocol) = custom_protocol.as_ref() {
                 let handler = custom_protocol.1.clone();
                 webview_builder = webview_builder
-                    .with_custom_protocol(custom_protocol.0.to_owned(), move |request| {
+                    .with_custom_protocol(custom_protocol.0.to_owned(), move |_webview_id, request| {
                         handler(&request).unwrap()
                     });
             }
@@ -243,13 +252,13 @@ impl Editor for WebViewEditor {
                 HTMLSource::String(html_str) => webview_builder.with_html(*html_str),
                 HTMLSource::URL(url) => webview_builder.with_url(*url),
             }
-            .unwrap()
-            .build();
-
+            .build(window)
+            .unwrap_or_else(|e| panic!("Failed to construct webview. {}", e));
+    
             WindowHandler {
                 context,
                 event_loop_handler,
-                webview: webview.unwrap_or_else(|e| panic!("Failed to construct webview. {}", e)),
+                webview,
                 events_receiver,
                 keyboard_handler,
                 mouse_handler,
